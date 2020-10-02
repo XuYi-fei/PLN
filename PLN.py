@@ -23,17 +23,15 @@ from utils.loss import L2_loss_func
 
 
 def preprocess(img_path):
-    # img_list = os.listdir(img_path)
-    # all_imgs = []
-    # for img in img_list:
-    #     img = os.path.join(img_path,img)
-    #     im = Image.open(img)
-    #     all_imgs.append(im)
+
     # im = Image.open(img_path)
-    trans = transforms.Compose([transforms.ToTensor()])
+    trans = transforms.Compose([transforms.ToTensor(),transforms.Normalize(mean=(0,0,0),std=(1,1,1))])
     im = trans(img_path)
     im.cuda()
     return im
+
+def show_gt_map(bboxes,img):
+    pass
 
 class PLN(nn.Module):
     # This class is for some basic ways to pass the variable
@@ -126,6 +124,7 @@ class PLN(nn.Module):
             bbox = []
             for j in range(top_k):
                 classes, ix, iy, sx, sy, confidence = res_index[i][j]
+                print(pair[0][i][21][ix][iy],pair[0][i][22][ix][iy])
                 corner_x, corner_y = ix * w_unit + pair[0][i][21][ix][iy] * w_unit, iy * h_unit + pair[0][i][22][ix][iy] * h_unit
                 center_x, center_y = sx * w_unit + pair[1][i][21][sx][sy] * w_unit, sy * h_unit + pair[1][i][22][sx][sy] * h_unit
                 if corner_x == center_x or corner_y == center_y:
@@ -136,18 +135,27 @@ class PLN(nn.Module):
                     # 左上和中间点
                     x1, y1 = corner_x, corner_y
                     x2, y2 = 2 * center_x - corner_x, 2 * center_y - corner_y
+                    x2 = w if x2 > w else x2
+                    y2 = h if y2 > h else y2
                 elif corner_x < center_x and corner_y > center_y:
                     # 左下和中间点
                     x1, y1 = corner_x, 2 * center_y - corner_y
                     x2, y2 = 2 * center_x - corner_x, corner_y
+                    y1 = 0 if y1 < 0 else y1
+                    x2 = w if x2 > w else x2
+
                 elif corner_x > center_x and corner_y < center_y:
                     # 右上和中心点
                     x1, y1 = 2 * center_x - corner_x, corner_y
                     x2, y2 = corner_x, 2 * center_y - corner_y
+                    x1 = 0 if x1 < 0 else x1
+                    y2 = h if y2 > h else y2
                 else:
                     # 右下和中心点
                     x1, y1 = 2 * center_x - corner_x,  2 * center_y - corner_y
                     x2, y2 = corner_x, corner_y
+                    x1 = 0 if x1 < 0 else x1
+                    y1 = 0 if y1 < 0 else y1
 
                 bbox.append((classes,int(x1),int(y1),int(x2),int(y2),confidence))
             bboxes.append(bbox)
@@ -159,7 +167,7 @@ class PLNet(PLN):
     def __init__(self,tf = transforms.Resize((512,512))):
         super(PLNet,self).__init__()
         self.tf = tf
-        self.epoch = 400
+        self.epoch = 300
         self.grid_w, self.grid_h = 512 /14, 512 / 14
         self.index2class = {}
         self.class2index = {"aeroplane":0,"bicycle":1,"bird":2,"boat":3,"bottle":4,"bus":5,"car":6,"cat":7,
@@ -179,35 +187,6 @@ class PLNet(PLN):
                 img = self.tf(img)
                 tensor = preprocess(img)
 
-                # pln = PLN()
-                # inference_1, inference_2, inference_3, inference_4 = pln.forward(tensor)
-                #
-                # res1a, res1b, res1c, res1d = pln.inference_analyze(inference_1)
-                # N = res1a.shape[0]
-                #
-                # res1a_index, res1b_index, res1c_index, res1d_index = \
-                #     pln.find_max_index(res1a, 5), pln.find_max_index(res1b, 5), pln.find_max_index(res1c,5), \
-                #     pln.find_max_index(res1d, 5)
-                #
-                # # pair----> A turple, with each(N,51,14,14)containing the parameters
-                # # pair_1a corner_point1 with center_point_1----->res1
-                # # I copied the pairs from inference just to get the x and y according to the probabilities that calculated in
-                # # the res_indexes, other parameters are useless when doing inference.+
-                # pair_1a = (inference_1[:, :inference_1.shape[1] // 4, :, :],
-                #            inference_1[:, inference_1.shape[1] // 4 * 2: inference_1.shape[1] // 4 * 3, :, :])
-                # # pair_1b corner_point2 with center point 1----->res2
-                # pair_1b = (inference_1[:, inference_1.shape[1] // 4:inference_1.shape[1] // 4 * 2, :, :],
-                #            inference_1[:, inference_1.shape[1] // 4 * 2: inference_1.shape[1] // 4 * 3, :, :])
-                # # pair_1c corner_point1 with center point 2----->res3
-                # pair_1c = (inference_1[:, :inference_1.shape[1] // 4, :, :],
-                #            inference_1[:, inference_1.shape[1] // 4 * 3:, :, :])
-                # # pair_1d corner_point2 with center point 2----->res4
-                # pair_1d = (inference_1[:, inference_1.shape[1] // 4:inference_1.shape[1] // 4 * 2, :, :],
-                #            inference_1[:, inference_1.shape[1] // 4 * 3:, :, :])
-                #
-                # visualizer = Visualizer()
-                # bboxes = pln.get_bbox(pair_1a, res1a_index)
-                # visualizer.draw_box(bboxes[0], img)
             else:
                 # if img is a path to dataset
                 data= Dataset(img_path,'2007','train',transform=self.tf)
@@ -217,7 +196,9 @@ class PLNet(PLN):
                 imgs = []
                 print('Reading imgs from VOC data_train....')
                 for idx, i in tqdm(enumerate(data)):
-                    if idx > 0:
+                    if idx == 0  or idx == 1:
+                        continue
+                    if idx > 2:
                         break
                     imgs.append(i[0])
                     tensor_list.append(preprocess(i[0]))
@@ -226,7 +207,6 @@ class PLNet(PLN):
                 print('Data read over.')
 
                 tensor = torch.stack(tensor_list)
-
 
             net = Net()
             net.load_state_dict(torch.load('trained_model.pth'))
@@ -268,7 +248,7 @@ class PLNet(PLN):
             # To store all the images in the file
             net = Net()
             Loss = L2_loss_func()
-            optimzer = optim.Adam(net.parameters(),lr=5*1e-6)
+            optimzer = optim.Adam(net.parameters(),lr=1e-5,weight_decay=0.001)
             print('Training.....')
             for epoch in tqdm(range(self.epoch)):
                 optimzer.zero_grad()
@@ -278,7 +258,9 @@ class PLNet(PLN):
                 print()
                 # print('Reading VOC data.....')
                 for idx, i in tqdm(enumerate(data)):
-                    if idx > 0:
+                    if idx == 1 or idx == 0:
+                        continue
+                    if idx > 2:
                         break
                     # i[0].save("1.jpg")
                     tensor_list.append(preprocess(i[0]))
@@ -296,11 +278,13 @@ class PLNet(PLN):
                 # inference[N,51,14,14]
 
                 N = inference1.shape[0]
-                print('max parameter:', max(inference1), "min parameter:",min(inference1))
+                print('max parameter:', max(inference1), "min parameter:", min(inference1))
                 loss= Loss(inference1,target) + Loss(inference2,target) + Loss(inference3,target) + Loss(inference4,target)
                 print( "total loss:", loss)
+
                 loss.backward()
                 optimzer.step()
+
 
             torch.save(net.state_dict(), 'trained_model.pth')
 
@@ -361,7 +345,7 @@ class PLNet(PLN):
     def decode_xy(self,bbox):
         # bbox is (x,y), return ix,iy, x, y
         ix, iy = bbox[0] // self.grid_w, bbox[1] // self.grid_h
-        x, y = bbox[0] - self.grid_w * ix, bbox[1] - self.grid_h * iy
+        x, y = ( bbox[0] - self.grid_w * ix ) / self.grid_w, ( bbox[1] - self.grid_h * iy ) / self.grid_h
         ix, iy = int(ix), int(iy)
         if ix == 14:
             ix = 13

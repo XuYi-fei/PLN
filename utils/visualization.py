@@ -39,7 +39,7 @@ class Visualizer():
             # if confidence < 0.8:
             #     continue
             cv2.rectangle(img,(x1,y1),(x2,y2),(0,255,0),3)
-            cv2.putText(img, class_name, (x1, y1 - 2),
+            cv2.putText(img, class_name, (x1, y1+5),
                         cv2.FONT_HERSHEY_COMPLEX, 1, (255,255,255))
         # img_name = img_path.split('/')[-1]
         # img_name = img_name.replace('.jpg','_result.jpg')
